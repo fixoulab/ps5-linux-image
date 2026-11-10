@@ -51,6 +51,14 @@ fi
 
 logger -t ps5-pve-hosts "$NODE now resolves to $IP" 2>/dev/null || true
 
+# pvebanner wrote /etc/issue early in boot, before the lease, when the node
+# name was still on loopback: it came out empty. Rewrite it so the console
+# login screen shows the web UI address.
+if [ -x /usr/bin/pvebanner ]; then
+    /usr/bin/pvebanner >/dev/null 2>&1 || true
+    /sbin/agetty --reload >/dev/null 2>&1 || true
+fi
+
 # Booted without a lease: pve-cluster gave up because the node name was still
 # on loopback. Now that it resolves, bring the Proxmox services back.
 if systemctl is-failed --quiet pve-cluster.service 2>/dev/null; then

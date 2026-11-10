@@ -2,6 +2,10 @@
 
 Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Fedora (GNOME), individually or as a multi-distro image with kexec switching.
 
+> **This fork adds a Proxmox VE 9 target** (Debian 13 "Trixie"): `./build_image.sh --distro proxmox9`.
+> See [distros/proxmox9/README.md](distros/proxmox9/README.md) for defaults, first boot and known limitations.
+> Everything else follows [ps5-linux/ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image).
+
 ## Prerequisites
 
 - Docker (with permission to run `--privileged` containers) — install as per your distro's instructions
