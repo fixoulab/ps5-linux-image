@@ -73,6 +73,7 @@ EOF
             cp /repo/distros/${DISTRO}/ps5-pve-net.service  "$STAGING/"
             cp /repo/distros/${DISTRO}/ps5-pve-hosts        "$STAGING/"
             cp /repo/distros/${DISTRO}/dhclient-exit-hook   "$STAGING/"
+            cp /repo/distros/${DISTRO}/ps5-first-boot-keys.service "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
         debian)

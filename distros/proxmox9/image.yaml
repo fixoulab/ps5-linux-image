@@ -143,6 +143,10 @@ files:
   source: /tmp/build-staging/dhclient-exit-hook
   mode: "0644"
 
+- path: /etc/systemd/system/ps5-first-boot-keys.service
+  generator: copy
+  source: /tmp/build-staging/ps5-first-boot-keys.service
+
 - path: /opt/debs/
   generator: copy
   source: /tmp/build-staging/debs
@@ -326,6 +330,13 @@ actions:
     printf 'MODULES=most\nBUSYBOX=y\n' > /etc/initramfs-tools/conf.d/ps5-amdgpu
     update-initramfs -c -k "$KVER"
     /etc/kernel/postinst.d/zz-update-boot "$KVER"
+
+    # The image is meant to be shared: do not ship the SSH host keys that
+    # openssh-server generated during the build, or every install would have
+    # the same ones. ps5-first-boot-keys.service creates fresh keys (and a
+    # fresh snakeoil certificate) on first boot, before sshd and pmxcfs start.
+    rm -f /etc/ssh/ssh_host_*
+    systemctl enable ps5-first-boot-keys.service
 
 mappings:
   architecture_map: debian

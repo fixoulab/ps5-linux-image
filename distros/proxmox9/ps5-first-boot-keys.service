@@ -1,0 +1,13 @@
+[Unit]
+Description=PS5 Proxmox: generate SSH host keys on first boot
+ConditionPathExistsGlob=!/etc/ssh/ssh_host_*_key
+Before=ssh.service pve-cluster.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+ExecStart=-/usr/sbin/make-ssl-cert generate-default-snakeoil --force-overwrite
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
