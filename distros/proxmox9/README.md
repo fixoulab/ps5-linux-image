@@ -21,6 +21,17 @@ sudo rm -rf work/chroot
 
 Boot the image with [ps5-linux-loader](https://github.com/ps5-linux/ps5-linux-loader), like any other image from this builder.
 
+## Publishing an image
+
+```bash
+./build_image.sh --distro proxmox9 --release   # build, then pack
+./release.sh                                   # or pack an image that is already built
+```
+
+This writes `output/ps5-proxmox9.img.xz` and `output/ps5-proxmox9.img.xz.sha256`, the two files to attach to a GitHub release. The archive is tested after compression, and the script warns if it is over the 2 GiB limit of GitHub release assets.
+
+Always publish the build output, never a copy of a drive that has already booted: that one holds its own keys, certificates and network settings.
+
 ## First boot
 
 Plug in wired ethernet before booting (internal port or a USB adapter). WiFi is left unconfigured: Proxmox guests are bridged, and WiFi interfaces cannot be bridged reliably.

@@ -9,6 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
+RELEASE=false
 PATCHES_REF="kernel-7.2.3-5f6b5d3"
 
 MULTI_DISTROS="ubuntu2604 arch cachyos"
@@ -23,6 +24,7 @@ usage() {
     echo "  --clean      Remove all cached build artifacts and start from scratch"
     echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
+    echo "  --release    After the build, pack the image for publication (.img.xz + .sha256, see release.sh)"
     echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: v1.2)"
     exit 1
 }
@@ -35,6 +37,7 @@ while [[ $# -gt 0 ]]; do
         --clean)     CLEAN=true;           shift ;;
         --clean-only) CLEAN=true; CLEAN_EXIT=true; shift ;;
         --kernel-only) KERNEL_ONLY=true;   shift ;;
+        --release)   RELEASE=true;         shift ;;
         --patches-ref) [ -n "$2" ] && PATCHES_REF="$2"; shift 2 ;;
         -h|--help)   usage ;;
         *) echo "Unknown option: $1"; usage ;;
@@ -422,3 +425,8 @@ fi
 echo ""
 echo "Done! Image: $IMG_PATH"
 echo "Flash: sudo dd if=$IMG_PATH of=/dev/sdX bs=4M status=progress"
+
+if [ "$RELEASE" = true ]; then
+    echo ""
+    "$SCRIPT_DIR/release.sh" --image "$IMG_PATH"
+fi

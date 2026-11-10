@@ -59,6 +59,7 @@ sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
 | `--kernel-only` | Build and package the kernel only, then exit | off |
+| `--release` | After the build, pack the image for publication: `.img.xz` and `.sha256` (see `release.sh`) | off |
 | `--patches-ref` | Branch, tag, or commit SHA for patches | `v1.2` |
 
 ## Caching
