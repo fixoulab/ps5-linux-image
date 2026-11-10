@@ -144,6 +144,24 @@ else
     [ -d "$CHROOT_DIR/bin" ] && SKIP_CHROOT=true
 fi
 
+# --- Optional kernel config fragment for this distro ---
+# distros/<distro>/kernel.config is merged on top of the PS5 .config. The
+# kernel packages in linux-bin/ remember which fragment they were built with:
+# a kernel built for another fragment (or for none) is rebuilt, and the root
+# filesystem with it, since it embeds the kernel and its initramfs.
+KCONFIG_FRAGMENT="$SCRIPT_DIR/distros/$DISTRO/kernel.config"
+FRAGMENT_ID="none"
+if [ -f "$KCONFIG_FRAGMENT" ]; then
+    FRAGMENT_ID="$(sha256sum < "$KCONFIG_FRAGMENT" | cut -d' ' -f1)"
+else
+    KCONFIG_FRAGMENT=""
+fi
+if [ "$SKIP_KERNEL" = true ] && \
+   [ "$(cat "$KERNEL_OUT/KCONFIG_FRAGMENT" 2>/dev/null || echo none)" != "$FRAGMENT_ID" ]; then
+    SKIP_KERNEL=false
+    SKIP_CHROOT=false
+fi
+
 # --- Build plan summary ---
 echo ""
 echo "PS5 Linux Image Builder"
@@ -162,6 +180,7 @@ if [ -f "$PATCHES_DIR/.config" ]; then
 else
     echo "  Kernel:       (will fetch)"
 fi
+[ -n "$KCONFIG_FRAGMENT" ] && echo "  Kernel config: PS5 .config + distros/$DISTRO/kernel.config"
 echo "  Kernel src:   $KERNEL_SRC"
 echo ""
 echo "Stages:"
@@ -306,15 +325,20 @@ else
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
             -f "$SCRIPT_DIR/docker/kernel-builder/Dockerfile" "$SCRIPT_DIR"
 
+    FRAGMENT_MOUNT=()
+    [ -n "$KCONFIG_FRAGMENT" ] && FRAGMENT_MOUNT=(-v "$KCONFIG_FRAGMENT":/kernel-fragment.config:ro)
+
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
             -v "$KERNEL_SRC":/src \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \
             -v "$PATCHES_DIR":/ps5-linux-patches \
+            "${FRAGMENT_MOUNT[@]}" \
             ps5-kernel-builder
 
     ls "$KERNEL_OUT/staging/lib/modules/" | head -1 > "$KERNEL_OUT/VERSION"
+    echo "$FRAGMENT_ID" > "$KERNEL_OUT/KCONFIG_FRAGMENT"
 
     case "$FORMAT" in deb|all)
         run_stage "Package kernel (.deb)" \

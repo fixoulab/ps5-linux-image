@@ -6,7 +6,36 @@ set -e
 # Clean host-built tool artifacts that may reference wrong include paths
 make -C tools/objtool clean 2>/dev/null || true
 
+# Optional per-distro config fragment, mounted by build_image.sh. The stock
+# PS5 config is kept aside so the fragment is always merged on a clean base,
+# and so that building without a fragment brings the stock config back.
+FRAGMENT=/kernel-fragment.config
+if [ -f "$FRAGMENT" ]; then
+    [ -f .config.ps5-base ] || cp .config .config.ps5-base
+    cp .config.ps5-base .config
+    echo "=== Merging kernel config fragment ==="
+    scripts/kconfig/merge_config.sh -m .config "$FRAGMENT"
+elif [ -f .config.ps5-base ]; then
+    cp .config.ps5-base .config
+fi
+
 make olddefconfig
+
+# olddefconfig silently drops options whose dependencies are not met: check
+# that every line of the fragment made it into the final config.
+if [ -f "$FRAGMENT" ]; then
+    fragment_ok=1
+    while IFS= read -r line; do
+        case "$line" in
+            CONFIG_*=*)
+                grep -qxF -- "$line" .config \
+                    || { echo "ERROR: fragment option not applied: $line"; fragment_ok=0; }
+                ;;
+        esac
+    done < "$FRAGMENT"
+    [ "$fragment_ok" = 1 ] || exit 1
+fi
+
 make -j"$(nproc)" bzImage modules
 
 # Stage all artifacts so downstream packagers don't need to run make

@@ -61,16 +61,24 @@ To use a static address, edit `vmbr0` in the web UI (or `/etc/network/interfaces
 
 Only `linux-ps5` boots the console. `proxmox-ve` is satisfied by a small stub package (`ps5-proxmox-kernel-stub`), and an apt pin in `/etc/apt/preferences.d/ps5-no-distro-kernel` blocks Proxmox and Debian kernel images. Do not remove either: any kernel package that gets installed is copied over the boot files.
 
-`apt update && apt full-upgrade` updates Proxmox VE as usual. Kernel updates come as `linux-ps5` packages from [ps5-linux-patches](https://github.com/ps5-linux/ps5-linux-patches).
+`apt update && apt full-upgrade` updates Proxmox VE as usual. Kernel updates come as `linux-ps5` packages from [ps5-linux-patches](https://github.com/ps5-linux/ps5-linux-patches). Those upstream packages are built from the stock PS5 config, without the additions below.
+
+### Config fragment
+
+The stock PS5 kernel config is aimed at desktop use and leaves out several things Proxmox relies on. [`kernel.config`](kernel.config) is a fragment merged on top of it when this target is built:
+
+| Section | What it brings |
+|---------|----------------|
+| Firewall | legacy iptables/ebtables tables and ipset, which `pve-firewall` requires |
+| VLANs | 802.1Q interfaces and VLAN-aware bridges |
+| Rate limit | traffic control pieces used for guest network rate limits |
+| LVM | thin provisioning (LVM-thin) and classic LVM snapshots |
+| Shared storage | iSCSI initiator, Ceph RBD and CephFS clients |
+
+Almost everything is built as modules and loads on demand. The build stops if an option of the fragment does not make it into the final config. The Proxmox firewall itself stays disabled until you enable it at datacenter level, as on any fresh install.
+
+`build_image.sh` records which fragment the cached kernel packages were built with. After the fragment changes, the next run rebuilds the kernel and the root filesystem on its own. Building another target afterwards rebuilds the kernel without the fragment.
 
 ## Known limitations
 
-These come from the `linux-ps5` kernel configuration (checked on 7.2.3) and also apply to the PVE 8 target:
-
-- no ipset support, so the Proxmox firewall (`pve-firewall`) cannot work,
-- no VLAN support (802.1Q, VLAN-aware bridges),
-- no LVM-thin (device-mapper thin provisioning),
-- no traffic shaping for guest network rate limits,
-- no ZFS, Ceph/RBD, iSCSI or NBD.
-
-KVM, LXC, bridging, NFS and CIFS are available.
+- No ZFS: it is an out-of-tree module and is not built here.
