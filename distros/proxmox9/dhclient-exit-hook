@@ -1,0 +1,9 @@
+# Sourced by dhclient-script (POSIX sh): keep the Proxmox node name pointing
+# at the address leased on vmbr0. See /usr/local/sbin/ps5-pve-hosts.
+case "${reason:-}" in
+    BOUND|RENEW|REBIND|REBOOT)
+        if [ "${interface:-}" = "vmbr0" ] && [ -n "${new_ip_address:-}" ]; then
+            /usr/local/sbin/ps5-pve-hosts "$new_ip_address" || true
+        fi
+        ;;
+esac

@@ -1,0 +1,60 @@
+#!/bin/bash
+# First boot: bridge the first wired interface into vmbr0 (DHCP).
+#
+# Proxmox needs a vmbr0 bridge for VMs/containers. The PS5 ethernet name is
+# not known at build time (internal GbE or a USB adapter), so pick it here and
+# write the stanza the Proxmox GUI expects into /etc/network/interfaces.
+# Runs before networking.service, which then brings vmbr0 up normally.
+# If no wired interface is found the unit stays enabled and retries next boot.
+set -u
+
+CFG=/etc/network/interfaces
+
+if grep -q '^iface vmbr0 ' "$CFG" 2>/dev/null; then
+    systemctl disable ps5-pve-net.service >/dev/null 2>&1 || true
+    exit 0
+fi
+
+# First physical wired interface: predictable names (en*) before legacy eth*.
+find_nic() {
+    local p
+    for p in /sys/class/net/en* /sys/class/net/eth*; do
+        [ -e "$p/device" ] || continue
+        echo "${p##*/}"
+        return 0
+    done
+    return 1
+}
+
+IF=
+SECONDS=0
+while [ "$SECONDS" -lt 40 ]; do
+    # Let udev finish renaming (eth0 -> enp...) before trusting a name.
+    udevadm settle --timeout=5 2>/dev/null || true
+    if IF=$(find_nic) && [ -e "/sys/class/net/$IF" ]; then
+        break
+    fi
+    IF=
+    sleep 1
+done
+
+if [ -z "$IF" ]; then
+    echo "ps5-pve-net: no wired interface found, retrying on next boot" >&2
+    exit 0
+fi
+
+cat >> "$CFG" <<NET
+
+iface $IF inet manual
+
+auto vmbr0
+iface vmbr0 inet dhcp
+        bridge-ports $IF
+        bridge-stp off
+        bridge-fd 0
+
+source /etc/network/interfaces.d/*
+NET
+
+echo "ps5-pve-net: vmbr0 bridged on $IF"
+systemctl disable ps5-pve-net.service >/dev/null 2>&1 || true

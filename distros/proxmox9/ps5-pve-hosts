@@ -1,0 +1,62 @@
+#!/bin/bash
+# Point the Proxmox node name at the address leased on vmbr0.
+#
+# pmxcfs (pve-cluster) refuses to start when the node name only resolves to a
+# loopback address, and this image gets its address by DHCP, so /etc/hosts
+# cannot be final at build time. Called by the dhclient exit hook
+# /etc/dhcp/dhclient-exit-hooks.d/ps5-pve-hosts with the leased address.
+# Remove that hook to manage /etc/hosts yourself (e.g. with a static address).
+#
+# Usage: ps5-pve-hosts <ipv4-address>
+set -u
+
+IP=${1:-}
+case "$IP" in
+    ''|127.*|*:*) exit 0 ;;
+esac
+
+NODE=$(uname -n)
+NODE=${NODE%%.*}
+[ -n "$NODE" ] || exit 0
+
+HOSTS=/etc/hosts
+
+CUR=$(awk -v n="$NODE" '
+    /^[[:space:]]*#/ { next }
+    $1 !~ /:/ {
+        for (i = 2; i <= NF; i++) {
+            if ($i == n) { print $1; exit }
+        }
+    }' "$HOSTS" 2>/dev/null)
+
+# Renewals call this every half lease: nothing to do when already current.
+[ "$CUR" = "$IP" ] && exit 0
+
+TMP=$(mktemp "$HOSTS.XXXXXX") || exit 1
+if awk -v ip="$IP" -v n="$NODE" '
+    /^[[:space:]]*#/ { print; next }
+    $1 !~ /:/ {
+        for (i = 2; i <= NF; i++) {
+            if ($i == n) { $1 = ip; seen = 1; break }
+        }
+    }
+    { print }
+    END { if (!seen) print ip, n ".local", n }' "$HOSTS" > "$TMP"; then
+    chmod 0644 "$TMP"
+    mv -f "$TMP" "$HOSTS"
+else
+    rm -f "$TMP"
+    exit 1
+fi
+
+logger -t ps5-pve-hosts "$NODE now resolves to $IP" 2>/dev/null || true
+
+# Booted without a lease: pve-cluster gave up because the node name was still
+# on loopback. Now that it resolves, bring the Proxmox services back.
+if systemctl is-failed --quiet pve-cluster.service 2>/dev/null; then
+    UNITS="pve-cluster.service pvedaemon.service pvestatd.service pveproxy.service"
+    # shellcheck disable=SC2086
+    systemctl reset-failed $UNITS 2>/dev/null || true
+    # shellcheck disable=SC2086
+    systemctl --no-block restart $UNITS 2>/dev/null || true
+fi

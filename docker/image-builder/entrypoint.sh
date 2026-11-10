@@ -66,6 +66,15 @@ EOF
             cp /repo/distros/${DISTRO}/proxmox-release-bookworm.gpg "$STAGING/"
             cp /kernel-debs/*.deb                           "$STAGING/debs/"
             ;;
+        proxmox9)
+            cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
+            cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"
+            cp /repo/distros/${DISTRO}/ps5-pve-net          "$STAGING/"
+            cp /repo/distros/${DISTRO}/ps5-pve-net.service  "$STAGING/"
+            cp /repo/distros/${DISTRO}/ps5-pve-hosts        "$STAGING/"
+            cp /repo/distros/${DISTRO}/dhclient-exit-hook   "$STAGING/"
+            cp /kernel-debs/*.deb                           "$STAGING/debs/"
+            ;;
         debian)
             cp /repo/distros/${DISTRO}/grow-rootfs          "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service  "$STAGING/"

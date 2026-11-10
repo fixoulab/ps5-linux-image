@@ -1,0 +1,15 @@
+[Unit]
+Description=PS5 Proxmox first-boot network bridge setup
+DefaultDependencies=no
+After=local-fs.target systemd-udevd.service systemd-udev-trigger.service
+Before=network-pre.target networking.service shutdown.target
+Wants=network-pre.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-pve-net
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

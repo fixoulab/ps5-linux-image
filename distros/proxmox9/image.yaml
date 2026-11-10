@@ -1,0 +1,331 @@
+image:
+  name: ps5-proxmox9
+  distribution: debian
+  release: trixie
+  description: Proxmox VE 9 (headless hypervisor) for PS5
+  architecture: x86_64
+
+source:
+  downloader: debootstrap
+  url: http://deb.debian.org/debian
+  variant: minbase
+  keyserver: keyserver.ubuntu.com
+  # Debian 13 archive, security and release keys (ftp-master.debian.org/keys.html)
+  # so debootstrap verifies the Release file. If the keyserver is unreachable,
+  # drop this list: debootstrap then bootstraps unverified, like distros/debian.
+  keys:
+  - 0x04B54C3CDCA79751B16BC6B5225629DF75B188BD
+  - 0x5E04A1E3223A19A20706E20F9904613D4CCE68C6
+  - 0x41587F7DB8C774BCCF131416762F67A0B2C39DE4
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+
+  # The Proxmox repository is NOT declared here: its keyring has to be fetched
+  # and checked first, which the post-unpack action below does before adding it.
+  repositories:
+  - name: sources.list
+    url: |-
+      deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+      deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
+      deb http://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+    architectures:
+    - amd64
+
+  sets:
+  # NOTE: proxmox-ve itself is NOT installed here. It hard-depends on a Proxmox
+  # kernel that cannot boot the PS5, so a post-packages action first installs an
+  # equivs stub that satisfies that dependency, then installs proxmox-ve.
+  - packages:
+    # Build tooling for the equivs kernel stub + out-of-tree modules
+    - equivs
+    - build-essential
+    - bc
+    - bison
+    - flex
+    - libssl-dev
+    - libelf-dev
+    - git
+
+    # Init (debootstrap minbase ships none)
+    - systemd-sysv
+    - dbus
+
+    # Bluetooth
+    - bluetooth
+    - bluez
+    - bluez-tools
+
+    # Networking (Proxmox uses ifupdown2 + a vmbr0 bridge). ifupdown2 only
+    # knows dhclient, which Debian 13 no longer installs by default.
+    - ifupdown2
+    - isc-dhcp-client
+    - openssh-server
+    - iproute2
+    - iputils-ping
+    - curl
+    - wget
+    - ca-certificates
+    - chrony
+
+    # Firmware + PS5 boot support
+    - firmware-linux
+    - firmware-linux-nonfree
+    - firmware-amd-graphics
+    - initramfs-tools
+    - kexec-tools
+    - kmod
+    - busybox
+    - zstd
+    - systemd-zram-generator
+
+    # Base utilities
+    - sudo
+    - cloud-guest-utils
+    - parted
+    - e2fsprogs
+    - usbutils
+    - pciutils
+    - rfkill
+    - util-linux
+    - vim
+    - nano
+    - tmux
+    - ethtool
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/machine-id
+  generator: dump
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /usr/local/sbin/ps5-pve-net
+  generator: copy
+  source: /tmp/build-staging/ps5-pve-net
+  mode: "0755"
+
+- path: /etc/systemd/system/ps5-pve-net.service
+  generator: copy
+  source: /tmp/build-staging/ps5-pve-net.service
+
+- path: /usr/local/sbin/ps5-pve-hosts
+  generator: copy
+  source: /tmp/build-staging/ps5-pve-hosts
+  mode: "0755"
+
+- path: /etc/dhcp/dhclient-exit-hooks.d/ps5-pve-hosts
+  generator: copy
+  source: /tmp/build-staging/dhclient-exit-hook
+  mode: "0644"
+
+- path: /opt/debs/
+  generator: copy
+  source: /tmp/build-staging/debs
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
+
+    # Never let apt install a Proxmox or Debian kernel image: none of them
+    # boots the PS5, and the zz-update-boot hook would deploy it over the
+    # linux-ps5 one. The equivs stub built in post-packages satisfies
+    # proxmox-ve instead. (proxmox-kernel-helper is not a kernel and stays
+    # installable, hence the version-prefixed globs.)
+    cat > /etc/apt/preferences.d/ps5-no-distro-kernel <<'PIN'
+    Package: proxmox-default-kernel proxmox-kernel-6.* proxmox-kernel-7.* linux-image-amd64 linux-image-6.* linux-image-7.*
+    Pin: version *
+    Pin-Priority: -1
+    PIN
+
+    # Proxmox VE 9 no-subscription repository. The keyring is fetched over
+    # HTTPS and checked against the sha256 published on
+    # https://pve.proxmox.com/wiki/Install_Proxmox_VE_on_Debian_13_Trixie
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates wget
+    wget -O /usr/share/keyrings/proxmox-archive-keyring.gpg \
+      https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg
+    echo '136673be77aba35dcce385b28737689ad64fd785a797e57897589aed08db6e45  /usr/share/keyrings/proxmox-archive-keyring.gpg' \
+      | sha256sum -c -
+    chmod 0644 /usr/share/keyrings/proxmox-archive-keyring.gpg
+    cat > /etc/apt/sources.list.d/pve-install-repo.sources <<'PVE'
+    Types: deb
+    URIs: http://download.proxmox.com/debian/pve
+    Suites: trixie
+    Components: pve-no-subscription
+    Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+    PVE
+    apt-get update
+
+- trigger: post-update
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Proxmox is headless and its web UI / console log in as root@pam, so root
+    # MUST have a usable password (do NOT lock it like the desktop images).
+    echo "root:proxmox" | chpasswd
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # The image is assembled inside Docker (hostname = container id), so pin a
+    # stable node name and a hosts entry BEFORE proxmox-ve's postinst runs.
+    # 127.0.1.1 is only a build-time placeholder: pmxcfs rejects loopback, and
+    # the dhclient exit hook swaps in the real vmbr0 address on first lease.
+    printf 'ps5pve\n' > /etc/hostname
+    cat > /etc/hosts <<'EOF'
+    127.0.0.1 localhost
+    127.0.1.1 ps5pve.local ps5pve
+
+    ::1     localhost ip6-localhost ip6-loopback
+    ff02::1 ip6-allnodes
+    ff02::2 ip6-allrouters
+    EOF
+    hostname ps5pve || true
+
+    # Satisfy proxmox-ve's hard kernel dependency with an equivs stub so the
+    # real (un-bootable on PS5) Proxmox kernel is never installed. The PS5
+    # kernel .deb is installed later in post-files and provides the modules.
+    cat > /tmp/ps5-kernel-stub.ctl <<'EOF'
+    Section: misc
+    Priority: optional
+    Standards-Version: 3.9.2
+    Package: ps5-proxmox-kernel-stub
+    Version: 1.0
+    Provides: proxmox-default-kernel (= 99), proxmox-kernel-7.0, pve-firmware, linux-image-amd64
+    Description: PS5 kernel stub so proxmox-ve accepts the PS5-patched kernel
+     Lets proxmox-ve install without pulling a Proxmox kernel that cannot boot
+     on the PS5. The PS5-patched kernel is installed separately.
+    EOF
+    ( cd /tmp && equivs-build ps5-kernel-stub.ctl )
+    apt-get install -y /tmp/ps5-proxmox-kernel-stub_1.0_all.deb
+    rm -f /tmp/ps5-proxmox-kernel-stub_1.0_all.deb /tmp/ps5-kernel-stub.ctl
+
+    # postfix would prompt interactively; preseed a no-op local config.
+    echo "postfix postfix/main_mailer_type select No configuration" | debconf-set-selections
+
+    # Install Proxmox VE (no recommends keeps the image lean; the stub and the
+    # apt pin block the PVE kernel + pve-firmware).
+    apt-get install -y --no-install-recommends \
+      -o Dpkg::Options::=--force-confold \
+      proxmox-ve postfix open-iscsi
+
+    # Belt and braces: the stub must be what satisfied the kernel dependency.
+    if dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' 'proxmox-kernel-*' 'pve-kernel-*' 'linux-image-*' 2>/dev/null \
+        | grep '^i' | grep -v 'proxmox-kernel-helper$' | grep -q .; then
+      echo "ERROR: a distro kernel package got installed" >&2
+      exit 1
+    fi
+
+    # proxmox-ve may drop in the enterprise repository, which answers 401
+    # without a subscription and makes every apt update fail. Disable it.
+    for f in /etc/apt/sources.list.d/*.sources; do
+      [ -e "$f" ] || continue
+      if grep -q 'enterprise\.proxmox\.com' "$f" && ! grep -q '^Enabled:' "$f"; then
+        sed -i '/^Types:/a Enabled: false' "$f"
+      fi
+    done
+    for f in /etc/apt/sources.list.d/*.list; do
+      [ -e "$f" ] || continue
+      sed -i -E 's|^(deb .*enterprise\.proxmox\.com.*)$|# \1|' "$f"
+    done
+
+    # ifupdown2 runs dhclient for "inet dhcp". Under PVE 9 the Debian AppArmor
+    # profile for dhclient is reported to deny it network sockets
+    # (https://forum.proxmox.com/threads/169721/, staff advice: complain mode).
+    # A headless box without a lease is unreachable, so that profile is not
+    # loaded here. To re-enable:
+    #   rm /etc/apparmor.d/disable/sbin.dhclient && systemctl reload apparmor
+    if [ -f /etc/apparmor.d/sbin.dhclient ]; then
+      mkdir -p /etc/apparmor.d/disable
+      ln -sf /etc/apparmor.d/sbin.dhclient /etc/apparmor.d/disable/sbin.dhclient
+    fi
+
+    # Allow root password login (test image; default creds root/proxmox).
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/'              /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+    systemctl set-default multi-user.target
+    systemctl enable ssh.service || true
+    systemctl enable chrony || true
+    systemctl enable bluetooth.service || true
+
+    # zram swap: half of RAM, zstd compressed
+    printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
+
+    # Keep the shared image timezone-neutral.
+    ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service
+    mkdir -p /boot/efi
+
+    # zram, not disk hibernation — don't embed a build-container resume target.
+    mkdir -p /etc/initramfs-tools/conf.d
+    printf 'RESUME=none\n' > /etc/initramfs-tools/conf.d/resume
+
+    # Install the PS5-patched kernel (image + modules + headers).
+    dpkg -i /opt/debs/*.deb
+    rm -rf /opt/debs
+    apt-mark hold linux-ps5 || true
+
+    KVER=$(ls -1t /lib/modules | head -1)
+    depmod -a "$KVER"
+
+    # --- First-boot network: bridge the PS5 ethernet into vmbr0 (DHCP) -------
+    # The interface name varies, so ps5-pve-net.service picks it on first boot
+    # and appends the vmbr0 stanza before networking.service starts. The
+    # dhclient exit hook then keeps /etc/hosts on the leased address.
+    cat > /etc/network/interfaces <<'EOF'
+    auto lo
+    iface lo inet loopback
+    EOF
+    systemctl enable ps5-pve-net.service
+
+    # NOTE: the linux-ps5 package bundles the PS5 internal WiFi driver (IW620),
+    # but WiFi is intentionally left unconfigured: Proxmox VM/CT networking
+    # runs over the vmbr0 ethernet bridge, and WiFi interfaces cannot be
+    # bridged reliably. Connect the PS5 via ethernet (internal port or USB).
+
+    # Front-load amdgpu so the PS5 console comes up during boot.
+    grep -qxF amdgpu /etc/initramfs-tools/modules || printf '\namdgpu\n' >> /etc/initramfs-tools/modules
+    printf 'MODULES=most\nBUSYBOX=y\n' > /etc/initramfs-tools/conf.d/ps5-amdgpu
+    update-initramfs -c -k "$KVER"
+    /etc/kernel/postinst.d/zz-update-boot "$KVER"
+
+mappings:
+  architecture_map: debian
