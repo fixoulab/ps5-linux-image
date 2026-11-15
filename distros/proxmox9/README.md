@@ -54,6 +54,8 @@ Then open `https://<address>:8006` and log in as `root` (realm "Linux PAM"). The
 | SSH | root login with password enabled |
 | Network | `vmbr0` on the first wired interface, DHCP |
 | Swap | zram, half of RAM |
+| Storage | `local` only (directory, `/var/lib/vz`): VM disks, containers, ISOs, templates, backups |
+| Locale | `en_US.UTF-8`; SSH sessions do not take the client's locale |
 
 **Change the root password right after the first login** (`passwd`). The default one is public.
 
@@ -93,3 +95,4 @@ Almost everything is built as modules and loads on demand. The build stops if an
 ## Known limitations
 
 - No ZFS: it is an out-of-tree module and is not built here.
+- No `local-lvm` storage. The Proxmox ISO installer creates it as an LVM-thin pool on the system disk; this image keeps a single root partition and only has `local`. Commands, guides and scripts that hard-code `local-lvm` need `local` instead.

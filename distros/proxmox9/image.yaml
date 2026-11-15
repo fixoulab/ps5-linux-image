@@ -81,6 +81,9 @@ packages:
     - zstd
     - systemd-zram-generator
 
+    # Locales (debootstrap minbase ships none; generated in post-packages)
+    - locales
+
     # Base utilities
     - sudo
     - cloud-guest-utils
@@ -203,6 +206,14 @@ actions:
     set -eux
     export DEBIAN_FRONTEND=noninteractive
 
+    # Locale. Without a generated locale every SSH login and every perl tool
+    # (pveversion, apt hooks...) prints "Setting locale failed". Same default
+    # as the Proxmox VE installer: en_US.UTF-8.
+    sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen 2>/dev/null || true
+    grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null || echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+    locale-gen
+    update-locale LANG=en_US.UTF-8
+
     # The image is assembled inside Docker (hostname = container id), so pin a
     # stable node name and a hosts entry BEFORE proxmox-ve's postinst runs.
     # 127.0.1.1 is only a build-time placeholder: pmxcfs rejects loopback, and
@@ -279,6 +290,13 @@ actions:
     # Allow root password login (test image; default creds root/proxmox).
     sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/'              /etc/ssh/sshd_config
     sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+    # Debian's sshd accepts the locale of the SSH client (AcceptEnv LANG LC_*).
+    # A client locale that is not generated here (fr_FR.UTF-8, de_DE.UTF-8...)
+    # brings the "Setting locale failed" warnings back, so sessions use the
+    # system locale instead. To use your own: dpkg-reconfigure locales, then
+    # put "AcceptEnv LANG LC_*" back in /etc/ssh/sshd_config.
+    sed -i -E '/^AcceptEnv/{s/ LANG//; s/ LC_\*//; s/^AcceptEnv[[:space:]]*$/#AcceptEnv LANG LC_*/}' /etc/ssh/sshd_config
 
     systemctl set-default multi-user.target
     systemctl enable ssh.service || true
